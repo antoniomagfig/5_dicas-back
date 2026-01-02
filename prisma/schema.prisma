@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Jogador {
+  id       Int    @id @default(autoincrement())
+  email    String @unique
+  username String @unique
+  vitorias Int    @default(0)
+  derrotas Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Carta {
+  id          Int     @id @default(autoincrement())
+  tipo        String
+  resposta    String
+  aceito      String?         // resposta alternativa (opcional)
+  dificuldade Int     @default(1)
+
+  dicas Dica[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Dica {
+  id      Int    @id @default(autoincrement())
+  texto   String
+  numero  Int
+
+  cartaId Int
+  carta   Carta @relation(fields: [cartaId], references: [id], onDelete: Cascade)
+
+  @@unique([cartaId, numero]) // impede duas dicas "nº 3" na mesma carta
+}
