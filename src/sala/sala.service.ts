@@ -13,6 +13,55 @@ import { JogadorService } from "src/jogador/jogador.service";
 export class SalaService {
   private salas = salasStore;
 
+  // ======================
+  // CACHE DE JOGADORES (evita hits repetidos no banco)
+  // ======================
+  private jogadoresCache = new Map<
+    string,
+    { id: number; username: string }[]
+  >();
+
+  private async getJogadoresDTO(
+    codigo: string,
+    jogadores: number[]
+  ): Promise<{ id: number; username: string }[]> {
+    const cached = this.jogadoresCache.get(codigo);
+
+    // cache válido se os ids forem os mesmos
+    if (
+      cached &&
+      cached.length === jogadores.length &&
+      jogadores.every((id) => cached.some((j) => j.id === id))
+    ) {
+      return cached;
+    }
+
+    const jogadoresDTO = await Promise.all(
+      jogadores.map(async (id) => {
+        const j = await this.jogadorService.findOne(id);
+        return { id: j.id, username: j.username };
+      })
+    );
+
+    this.jogadoresCache.set(codigo, jogadoresDTO);
+    return jogadoresDTO;
+  }
+
+  private async getUsernameById(
+    codigo: string,
+    jogadores: number[],
+    jogadorId: number
+  ): Promise<string> {
+    const jogadoresDTO = await this.getJogadoresDTO(codigo, jogadores);
+    const achou = jogadoresDTO.find((j) => j.id === jogadorId);
+
+    if (achou) return achou.username;
+
+    // fallback de segurança (não deveria acontecer)
+    const j = await this.jogadorService.findOne(jogadorId);
+    return j.username;
+  }
+
   constructor(
     private readonly cartaService: CartaService,
     private readonly jogadorService: JogadorService
@@ -27,18 +76,17 @@ export class SalaService {
   }
 
     async mapSalaParaDTO(sala: Sala) {
-        const jogadoresDTO = await Promise.all(
-            sala.jogadores.map(async (id) => {
-            const j = await this.jogadorService.findOne(id);
-            return { id: j.id, username: j.username };
-            })
-        );
+      const jogadoresDTO = await this.getJogadoresDTO(
+        sala.codigo,
+        sala.jogadores
+      );
 
-        return {
-            ...sala,
-            jogadores: jogadoresDTO,
-        };
+      return {
+        ...sala,
+        jogadores: jogadoresDTO,
+      };
     }
+
 
   private calcularTurnoAtivo(state: GameState): number {
     if (state.fase === "escolha_dica") return state.escolhedorId;
@@ -193,10 +241,14 @@ export class SalaService {
 
             s.pontos[jogadorId] = (s.pontos[jogadorId] ?? 0) + pontos;
 
-            const jogador = await this.jogadorService.findOne(jogadorId);
+            const username = await this.getUsernameById(
+              sala.codigo,
+              sala.jogadores,
+              jogadorId
+            );
 
             // ⚠️ SEMPRE mostra a resposta oficial
-            s.mensagemFim = `🎉 ${jogador.username} acertou! A resposta era "${carta.resposta}" (+${pontos} pts)`;
+            s.mensagemFim = `🎉 ${username} acertou! A resposta era "${carta.resposta}" (+${pontos} pts)`;
 
             s.fase = "fim_rodada";
 
